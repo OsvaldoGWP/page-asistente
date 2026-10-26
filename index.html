@@ -103,6 +103,20 @@
     #toast {
       transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
     }
+
+    /* Spinner de Carga */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col justify-between p-4 max-w-md mx-auto select-none">
@@ -176,8 +190,9 @@
           disabled
           class="tg-btn-primary btn-disabled w-full py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-md mt-6"
         >
-          <i class="ph-bold ph-paper-plane-right text-lg"></i>
-          <span>Registrar Factura</span>
+          <span id="btn-spinner-factura" class="spinner hidden"></span>
+          <i id="btn-icon-factura" class="ph-bold ph-paper-plane-right text-lg"></i>
+          <span id="btn-text-factura">Registrar Factura</span>
         </button>
       </form>
     </div>
@@ -293,8 +308,9 @@
           disabled
           class="tg-btn-primary btn-disabled w-full py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-md mt-6"
         >
-          <i class="ph-bold ph-check-circle text-lg"></i>
-          <span>Registrar Inversión</span>
+          <span id="btn-spinner-inversion" class="spinner hidden"></span>
+          <i id="btn-icon-inversion" class="ph-bold ph-check-circle text-lg"></i>
+          <span id="btn-text-inversion">Registrar Inversión</span>
         </button>
       </form>
     </div>
@@ -315,6 +331,9 @@
   </div>
 
   <script>
+    // URL de tu Custom Webhook en Make
+    const MAKE_WEBHOOK_URL = "https://hook.us2.make.com/awahk56v91uhqjuqg4nn66e6xr0vupag";
+
     // Inicialización del Telegram WebApp SDK
     const tg = window.Telegram ? window.Telegram.WebApp : null;
     let lastGeneratedData = null;
@@ -331,7 +350,7 @@
         if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
           const user = tg.initDataUnsafe.user;
           document.getElementById('user-name').innerText = `${user.first_name} ${user.last_name || ''}`.trim();
-          document.getElementById('user-subtitle').innerText = user.username ? `@${user.username}` : 'Usuario Telegram';
+          document.getElementById('user-subtitle').innerText = user.username ? `@${user.username}` : `ID: ${user.id}`;
           
           if (user.first_name) {
             document.getElementById('user-avatar').innerText = user.first_name.charAt(0).toUpperCase();
@@ -470,14 +489,13 @@
       const montoVal = parseRawNumber(montoInput.value);
 
       const data = {
-        task_type: "FACTURACION",
+        task_type: "FACTURAR",
         timestamp: new Date().toISOString(),
         monto: montoVal
       };
 
       const formattedStr = new Intl.NumberFormat('es-AR').format(montoVal);
-      submitPayload(data, `Factura de $ ${formattedStr} registrada`, "form-facturacion");
-      validateFacturaForm();
+      submitPayload(data, `Factura de $ ${formattedStr} registrada`, "form-facturacion", "factura");
     }
 
     // Submit de Inversión
@@ -506,43 +524,93 @@
         moneda: document.getElementById('inv-moneda').value
       };
 
-      submitPayload(data, "Inversión registrada correctamente", "form-inversion");
-      validateInversionForm();
+      submitPayload(data, "Inversión registrada correctamente", "form-inversion", "inversion");
     }
 
-    // Envío e integración SDK
-    function submitPayload(payload, successMsg, formId) {
+    // Envío por fetch directo con fix de reseteo de estado
+    async function submitPayload(payload, successMsg, formId, tipo) {
       lastGeneratedData = payload;
-      const jsonString = JSON.stringify(payload);
 
-      if (tg && tg.HapticFeedback) {
-        tg.HapticFeedback.notificationOccurred('success');
-      }
+      const btn = document.getElementById(`btn-submit-${tipo}`);
+      const spinner = document.getElementById(`btn-spinner-${tipo}`);
+      const icon = document.getElementById(`btn-icon-${tipo}`);
+      const btnText = document.getElementById(`btn-text-${tipo}`);
+      const originalText = tipo === 'factura' ? 'Registrar Factura' : 'Registrar Inversión';
 
-      if (tg && tg.sendData) {
-        showToast(successMsg + " (Enviando al Bot...)");
-        
-        setTimeout(() => {
-          try {
-            tg.sendData(jsonString);
-          } catch (e) {
-            console.warn("tg.sendData() falló:", e);
-            fallbackShowJson();
+      // Estado enviando
+      btn.disabled = true;
+      btn.classList.add('btn-disabled');
+      if (spinner) spinner.classList.remove('hidden');
+      if (icon) icon.classList.add('hidden');
+      btnText.textContent = "Registrando...";
+
+      // Adjuntar datos de usuario de Telegram
+      const tgUser = tg?.initDataUnsafe?.user || {};
+      payload.telegram_user = {
+        id: tgUser.id || null,
+        first_name: tgUser.first_name || 'Desconocido',
+        last_name: tgUser.last_name || '',
+        username: tgUser.username || ''
+      };
+      payload.initData = tg?.initData || '';
+
+      try {
+        const response = await fetch(MAKE_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        // Validamos códigos HTTP exitosos comunes de Make (200 OK, 202 Accepted)
+        if (response.ok || response.status === 200 || response.status === 202) {
+          btnText.textContent = "¡Registrado!";
+          
+          if (tg && tg.HapticFeedback) {
+            tg.HapticFeedback.notificationOccurred('success');
           }
-        }, 1000);
+          
+          showToast(successMsg, true);
 
-      } else {
-        showToast(successMsg);
+          // Limpiar formulario
+          document.getElementById(formId).reset();
+          if (formId === 'form-inversion') {
+            document.getElementById('inv-total-display').value = '';
+          }
+
+          // Cerrar la Mini App tras 1.2 segundos
+          setTimeout(() => {
+            if (tg) {
+              tg.close();
+            } else {
+              // Si se abre fuera de Telegram en un navegador web normal
+              btnText.textContent = originalText;
+              if (tipo === 'factura') validateFacturaForm();
+              else validateInversionForm();
+            }
+          }, 1200);
+
+        } else {
+          throw new Error(`Error en el servidor: ${response.status}`);
+        }
+      } catch (err) {
+        console.error("Error al enviar petición:", err);
+        if (tg && tg.HapticFeedback) {
+          tg.HapticFeedback.notificationOccurred('error');
+        }
+        showToast("Error al registrar la información", false);
         fallbackShowJson();
-      }
 
-      document.getElementById(formId).reset();
-      if (formId === 'form-inversion') {
-        document.getElementById('inv-total-display').value = '';
+        btnText.textContent = originalText;
+        if (tipo === 'factura') validateFacturaForm();
+        else validateInversionForm();
+      } finally {
+        // Apagar spinner de forma segura en cualquier escenario
+        if (spinner) spinner.classList.add('hidden');
+        if (icon) icon.classList.remove('hidden');
       }
     }
 
-    // Copiar JSON
+    // Mostrar opción de copiar JSON si ocurre algún fallo de red
     function fallbackShowJson() {
       const copyBtn = document.getElementById('btn-copy-json');
       if (copyBtn) copyBtn.classList.remove('hidden');
@@ -561,20 +629,27 @@
       
       try {
         document.execCommand('copy');
-        showToast("JSON copiado al portapapeles");
+        showToast("JSON copiado al portapapeles", true);
       } catch (err) {
-        showToast("Error al copiar al portapapeles");
+        showToast("Error al copiar al portapapeles", false);
       } finally {
         document.body.removeChild(textarea);
       }
     }
 
     // Toast flotante
-    function showToast(message) {
+    function showToast(message, isSuccess = true) {
       const toast = document.getElementById('toast');
       const toastMsg = document.getElementById('toast-msg');
-      
+      const toastIcon = document.getElementById('toast-icon');
+
       toastMsg.innerText = message;
+      if (isSuccess) {
+        toastIcon.className = "ph-bold ph-check-circle text-lg text-emerald-400 dark:text-emerald-600";
+      } else {
+        toastIcon.className = "ph-bold ph-x-circle text-lg text-red-400 dark:text-red-600";
+      }
+
       toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
       toast.classList.add('opacity-100', 'translate-y-0');
 
