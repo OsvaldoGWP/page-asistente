@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Telegram Mini App - Facturación e Inversiones</title>
+
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- Tailwind CSS para diseño ágil y moderno -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Phosphor Icons para iconografía tipo app nativa -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+  <style>
+    /* Configuración de tipografía e integración con variables nativas de Telegram */
+    :root {
+      --bg-color: var(--tg-theme-bg-color, #f4f4f5);
+      --text-color: var(--tg-theme-text-color, #18181b);
+      --secondary-bg-color: var(--tg-theme-secondary-bg-color, #ffffff);
+      --hint-color: var(--tg-theme-hint-color, #71717a);
+      --link-color: var(--tg-theme-link-color, #2563eb);
+      --button-color: var(--tg-theme-button-color, #0088cc);
+      --button-text-color: var(--tg-theme-button-text-color, #ffffff);
+      --border-color: rgba(0, 0, 0, 0.08);
+      --accent-color: #0088cc;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --border-color: rgba(255, 255, 255, 0.12);
+      }
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      padding-bottom: env(safe-area-inset-bottom, 20px);
+    }
+
+    .tg-input {
+      background-color: var(--secondary-bg-color);
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+      transition: all 0.2s ease-in-out;
+    }
+
+    .tg-input:focus {
+      outline: none;
+      border-color: var(--button-color);
+      box-shadow: 0 0 0 2px rgba(0, 136, 204, 0.2);
+    }
+
+    .tg-card {
+      background-color: var(--secondary-bg-color);
+      border: 1px solid var(--border-color);
+    }
+
+    /* Estilos de botones y estados deshabilitados */
+    .tg-btn-primary {
+      background-color: var(--button-color);
+      color: var(--button-text-color);
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .tg-btn-primary:active {
+      opacity: 0.85;
+      transform: scale(0.98);
+    }
+
+    .tg-btn-primary:disabled,
+    .btn-disabled {
+      opacity: 0.4 !important;
+      cursor: not-allowed !important;
+      pointer-events: none !important;
+      box-shadow: none !important;
+      transform: none !important;
+    }
+
+    /* Control de Visibilidad de Pestañas */
+    .tab-content {
+      display: none !important;
+    }
+
+    .tab-content.active {
+      display: block !important;
+    }
+
+    /* Asterisco de campo obligatorio */
+    .required-asterisk {
+      color: #ef4444;
+      font-weight: bold;
+      margin-left: 2px;
+    }
+
+    /* Toast Notification */
+    #toast {
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-4 max-w-md mx-auto select-none">
+
+  <!-- Header & Telegram User Profile Info -->
+  <div>
+    <header class="flex items-center justify-between py-3 mb-4">
+      <div class="flex items-center space-x-3">
+        <div id="user-avatar" class="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center text-lg font-bold shadow-sm">
+          <i class="ph-bold ph-user"></i>
+        </div>
+        <div>
+          <h1 id="user-name" class="text-base font-semibold leading-tight">Mini App Telegram</h1>
+          <p id="user-subtitle" class="text-xs opacity-60">Gestor rápido de registros</p>
+        </div>
+      </div>
+      <div class="text-right">
+        <span class="inline-block px-2.5 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-500" id="platform-badge">
+          Telegram
+        </span>
+      </div>
+    </header>
+
+    <!-- Segment Control / Switcher de Pestañas -->
+    <div class="tg-card p-1 rounded-xl flex items-center mb-5 shadow-sm">
+      <button 
+        id="tab-btn-factura" 
+        type="button"
+        onclick="switchTab('factura')" 
+        class="flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all duration-200 bg-blue-600 text-white shadow-xs"
+      >
+        <i class="ph-bold ph-receipt text-lg"></i>
+        <span>Facturación</span>
+      </button>
+      <button 
+        id="tab-btn-inversion" 
+        type="button"
+        onclick="switchTab('inversion')" 
+        class="flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all duration-200 opacity-60 hover:opacity-100"
+      >
+        <i class="ph-bold ph-trend-up text-lg"></i>
+        <span>Inversión</span>
+      </button>
+    </div>
+
+    <!-- FORMULARIO 1: FACTURACIÓN -->
+    <div id="tab-factura" class="tab-content active">
+      <form id="form-facturacion" onsubmit="handleFacturaSubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium mb-1.5 opacity-75">
+            Monto Total a Facturar <span class="required-asterisk">*</span>
+          </label>
+          <div class="relative">
+            <input 
+              type="text" 
+              inputmode="numeric"
+              id="fac-monto" 
+              placeholder="$ 0" 
+              required 
+              oninput="formatCurrencyInput(this); validateFacturaForm();"
+              class="tg-input w-full p-3.5 rounded-xl text-lg font-bold"
+            />
+            <span class="absolute right-3 top-3.5 opacity-40 font-semibold text-sm">ARS</span>
+          </div>
+          <p id="fac-error-msg" class="text-xs text-red-500 mt-1 hidden">Ingresa un monto válido mayor a 0.</p>
+        </div>
+
+        <button 
+          type="submit" 
+          id="btn-submit-factura"
+          disabled
+          class="tg-btn-primary btn-disabled w-full py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-md mt-6"
+        >
+          <i class="ph-bold ph-paper-plane-right text-lg"></i>
+          <span>Registrar Factura</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- FORMULARIO 2: REGISTRO DE INVERSIONES -->
+    <div id="tab-inversion" class="tab-content">
+      <form id="form-inversion" onsubmit="handleInversionSubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium mb-1.5 opacity-75">
+            Tipo de Activo <span class="required-asterisk">*</span>
+          </label>
+          <div class="relative">
+            <select id="inv-tipo-activo" required onchange="validateInversionForm()" class="tg-input w-full p-3 rounded-xl appearance-none text-sm font-medium pr-8">
+              <option value="ONs">Obligaciones Negociables (ONs)</option>
+              <option value="Acciones">Acciones / CEDEARs</option>
+              <option value="Bonos">Bonos Sovereign / BOTE</option>
+              <option value="FCI">Fondo Común de Inversión (FCI)</option>
+              <option value="Cripto">Criptomonedas / Stablecoins</option>
+              <option value="Otros">Otro tipo de Activo</option>
+            </select>
+            <i class="ph-bold ph-caret-down absolute right-3 top-3.5 opacity-50 pointer-events-none text-sm"></i>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium mb-1.5 opacity-75">
+              Ticker / Símbolo <span class="required-asterisk">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="inv-ticker" 
+              placeholder="Ej: YCA6P, AAPL, BTC" 
+              required 
+              oninput="validateInversionForm()"
+              class="tg-input w-full p-3 rounded-xl text-sm uppercase font-semibold"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1.5 opacity-75">
+              Operación <span class="required-asterisk">*</span>
+            </label>
+            <div class="relative">
+              <select id="inv-operacion" onchange="validateInversionForm()" class="tg-input w-full p-3 rounded-xl appearance-none text-sm font-semibold pr-6">
+                <option value="Compra">🟢 Compra</option>
+                <option value="Venta">🔴 Venta</option>
+              </select>
+              <i class="ph-bold ph-caret-down absolute right-2.5 top-3.5 opacity-50 pointer-events-none text-xs"></i>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium mb-1.5 opacity-75">
+              Cantidad Nominal <span class="required-asterisk">*</span>
+            </label>
+            <input 
+              type="number" 
+              step="any" 
+              min="0" 
+              id="inv-cantidad" 
+              placeholder="100" 
+              required 
+              oninput="calculateInvTotal(); validateInversionForm();"
+              class="tg-input w-full p-3 rounded-xl text-sm"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1.5 opacity-75">
+              Precio Unitario <span class="required-asterisk">*</span>
+            </label>
+            <input 
+              type="text" 
+              inputmode="numeric"
+              id="inv-precio" 
+              placeholder="$ 0" 
+              required 
+              oninput="formatCurrencyInput(this); calculateInvTotal(); validateInversionForm();"
+              class="tg-input w-full p-3 rounded-xl text-sm"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div class="col-span-2">
+            <label class="block text-xs font-medium mb-1.5 opacity-75">Total Estimado</label>
+            <input 
+              type="text" 
+              id="inv-total-display" 
+              readonly 
+              placeholder="$ 0" 
+              class="tg-input w-full p-3 rounded-xl text-sm font-bold bg-opacity-50 pointer-events-none"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1.5 opacity-75">
+              Moneda <span class="required-asterisk">*</span>
+            </label>
+            <div class="relative">
+              <select id="inv-moneda" onchange="validateInversionForm()" class="tg-input w-full p-3 rounded-xl appearance-none text-sm font-semibold pr-6">
+                <option value="USD">USD ($)</option>
+                <option value="ARS">ARS ($)</option>
+              </select>
+              <i class="ph-bold ph-caret-down absolute right-2.5 top-3.5 opacity-50 pointer-events-none text-xs"></i>
+            </div>
+          </div>
+        </div>
+
+        <button 
+          type="submit" 
+          id="btn-submit-inversion"
+          disabled
+          class="tg-btn-primary btn-disabled w-full py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 shadow-md mt-6"
+        >
+          <i class="ph-bold ph-check-circle text-lg"></i>
+          <span>Registrar Inversión</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Footer con utilidades extras -->
+  <footer class="mt-8 pt-4 border-t border-black/10 dark:border-white/10 text-center text-xs opacity-60 flex flex-col items-center gap-2">
+    <span>Optimizado para Telegram WebApp</span>
+    <button onclick="copyLastPayload()" id="btn-copy-json" class="hidden text-blue-500 font-medium hover:underline flex items-center gap-1">
+      <i class="ph-bold ph-copy"></i> Copiar último JSON al portapapeles
+    </button>
+  </footer>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-sm font-medium opacity-0 pointer-events-none z-50 transform translate-y-4 max-w-[90vw]">
+    <i id="toast-icon" class="ph-bold ph-check-circle text-lg text-emerald-400 dark:text-emerald-600"></i>
+    <span id="toast-msg">Operación registrada exitosamente</span>
+  </div>
+
+  <script>
+    // Inicialización del Telegram WebApp SDK
+    const tg = window.Telegram ? window.Telegram.WebApp : null;
+    let lastGeneratedData = null;
+    let currentTab = 'factura';
+
+    document.addEventListener("DOMContentLoaded", () => {
+      if (tg) {
+        tg.expand();
+        tg.ready();
+
+        if (tg.setHeaderColor) tg.setHeaderColor('secondary_bg_color');
+        if (tg.setBackgroundColor) tg.setBackgroundColor('bg_color');
+
+        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+          const user = tg.initDataUnsafe.user;
+          document.getElementById('user-name').innerText = `${user.first_name} ${user.last_name || ''}`.trim();
+          document.getElementById('user-subtitle').innerText = user.username ? `@${user.username}` : 'Usuario Telegram';
+          
+          if (user.first_name) {
+            document.getElementById('user-avatar').innerText = user.first_name.charAt(0).toUpperCase();
+          }
+        }
+      } else {
+        document.getElementById('platform-badge').innerText = 'Web Browser';
+        document.getElementById('platform-badge').classList.replace('text-blue-500', 'text-amber-500');
+        document.getElementById('platform-badge').classList.replace('bg-blue-500/10', 'bg-amber-500/10');
+      }
+
+      // Estado inicial de pestañas y botones
+      switchTab('factura');
+      validateFacturaForm();
+      validateInversionForm();
+    });
+
+    // Función auxiliar para extraer número puro
+    function parseRawNumber(str) {
+      if (!str) return 0;
+      const digits = str.replace(/\D/g, '');
+      return digits ? parseInt(digits, 10) : 0;
+    }
+
+    // Formateador dinámico de moneda ($ 1.000)
+    function formatCurrencyInput(input) {
+      const rawVal = parseRawNumber(input.value);
+
+      if (rawVal === 0) {
+        input.value = '';
+        return;
+      }
+
+      const formatted = new Intl.NumberFormat('es-AR').format(rawVal);
+      input.value = `$ ${formatted}`;
+    }
+
+    // Validación de Facturación en tiempo real
+    function validateFacturaForm() {
+      const montoInput = document.getElementById('fac-monto');
+      const errorMsg = document.getElementById('fac-error-msg');
+      const btn = document.getElementById('btn-submit-factura');
+      const montoVal = parseRawNumber(montoInput.value);
+
+      const isValid = montoVal > 0;
+
+      if (isValid) {
+        if (errorMsg) errorMsg.classList.add('hidden');
+        btn.disabled = false;
+        btn.classList.remove('btn-disabled');
+      } else {
+        btn.disabled = true;
+        btn.classList.add('btn-disabled');
+      }
+
+      return isValid;
+    }
+
+    // Validación de Inversiones en tiempo real
+    function validateInversionForm() {
+      const ticker = document.getElementById('inv-ticker').value.trim();
+      const cantidad = parseFloat(document.getElementById('inv-cantidad').value) || 0;
+      const precio = parseRawNumber(document.getElementById('inv-precio').value);
+      const btn = document.getElementById('btn-submit-inversion');
+
+      const isValid = ticker.length > 0 && cantidad > 0 && precio > 0;
+
+      if (isValid) {
+        btn.disabled = false;
+        btn.classList.remove('btn-disabled');
+      } else {
+        btn.disabled = true;
+        btn.classList.add('btn-disabled');
+      }
+
+      return isValid;
+    }
+
+    // Aislamiento completo y cambio entre pestañas
+    function switchTab(tab) {
+      currentTab = tab;
+      const btnFactura = document.getElementById('tab-btn-factura');
+      const btnInversion = document.getElementById('tab-btn-inversion');
+      const tabFactura = document.getElementById('tab-factura');
+      const tabInversion = document.getElementById('tab-inversion');
+
+      if (tg && tg.HapticFeedback) {
+        tg.HapticFeedback.impactOccurred('light');
+      }
+
+      if (tab === 'factura') {
+        btnFactura.className = "flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all duration-200 bg-blue-600 text-white shadow-xs";
+        btnInversion.className = "flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all duration-200 opacity-60 hover:opacity-100";
+        
+        tabFactura.classList.add('active');
+        tabInversion.classList.remove('active');
+        validateFacturaForm();
+      } else {
+        btnInversion.className = "flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all duration-200 bg-blue-600 text-white shadow-xs";
+        btnFactura.className = "flex-1 py-2.5 px-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all duration-200 opacity-60 hover:opacity-100";
+        
+        tabInversion.classList.add('active');
+        tabFactura.classList.remove('active');
+        validateInversionForm();
+      }
+    }
+
+    // Cálculo dinámico para Inversión
+    function calculateInvTotal() {
+      const cantidad = parseFloat(document.getElementById('inv-cantidad').value) || 0;
+      const precioInput = document.getElementById('inv-precio');
+      const precio = parseRawNumber(precioInput.value);
+      const total = cantidad * precio;
+      
+      const totalDisplay = document.getElementById('inv-total-display');
+      if (total > 0) {
+        const formattedTotal = new Intl.NumberFormat('es-AR').format(Math.round(total));
+        totalDisplay.value = `$ ${formattedTotal}`;
+      } else {
+        totalDisplay.value = '';
+      }
+    }
+
+    // Submit de Facturación
+    function handleFacturaSubmit(event) {
+      event.preventDefault();
+
+      if (!validateFacturaForm()) {
+        if (tg && tg.HapticFeedback) {
+          tg.HapticFeedback.notificationOccurred('error');
+        }
+        return;
+      }
+
+      const montoInput = document.getElementById('fac-monto');
+      const montoVal = parseRawNumber(montoInput.value);
+
+      const data = {
+        task_type: "FACTURACION",
+        timestamp: new Date().toISOString(),
+        monto: montoVal
+      };
+
+      const formattedStr = new Intl.NumberFormat('es-AR').format(montoVal);
+      submitPayload(data, `Factura de $ ${formattedStr} registrada`, "form-facturacion");
+      validateFacturaForm();
+    }
+
+    // Submit de Inversión
+    function handleInversionSubmit(event) {
+      event.preventDefault();
+
+      if (!validateInversionForm()) {
+        if (tg && tg.HapticFeedback) {
+          tg.HapticFeedback.notificationOccurred('error');
+        }
+        return;
+      }
+
+      const cantidad = parseFloat(document.getElementById('inv-cantidad').value);
+      const precio = parseRawNumber(document.getElementById('inv-precio').value);
+
+      const data = {
+        task_type: "INVERSION",
+        timestamp: new Date().toISOString(),
+        tipo_activo: document.getElementById('inv-tipo-activo').value,
+        ticker: document.getElementById('inv-ticker').value.trim().toUpperCase(),
+        operacion: document.getElementById('inv-operacion').value,
+        cantidad: cantidad,
+        precio_unitario: precio,
+        total: cantidad * precio,
+        moneda: document.getElementById('inv-moneda').value
+      };
+
+      submitPayload(data, "Inversión registrada correctamente", "form-inversion");
+      validateInversionForm();
+    }
+
+    // Envío e integración SDK
+    function submitPayload(payload, successMsg, formId) {
+      lastGeneratedData = payload;
+      const jsonString = JSON.stringify(payload);
+
+      if (tg && tg.HapticFeedback) {
+        tg.HapticFeedback.notificationOccurred('success');
+      }
+
+      if (tg && tg.sendData) {
+        showToast(successMsg + " (Enviando al Bot...)");
+        
+        setTimeout(() => {
+          try {
+            tg.sendData(jsonString);
+          } catch (e) {
+            console.warn("tg.sendData() falló:", e);
+            fallbackShowJson();
+          }
+        }, 1000);
+
+      } else {
+        showToast(successMsg);
+        fallbackShowJson();
+      }
+
+      document.getElementById(formId).reset();
+      if (formId === 'form-inversion') {
+        document.getElementById('inv-total-display').value = '';
+      }
+    }
+
+    // Copiar JSON
+    function fallbackShowJson() {
+      const copyBtn = document.getElementById('btn-copy-json');
+      if (copyBtn) copyBtn.classList.remove('hidden');
+    }
+
+    function copyLastPayload() {
+      if (!lastGeneratedData) return;
+      const text = JSON.stringify(lastGeneratedData, null, 2);
+
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      
+      try {
+        document.execCommand('copy');
+        showToast("JSON copiado al portapapeles");
+      } catch (err) {
+        showToast("Error al copiar al portapapeles");
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    }
+
+    // Toast flotante
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-msg');
+      
+      toastMsg.innerText = message;
+      toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
